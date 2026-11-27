@@ -81,10 +81,11 @@ You need a normal **AliExpress buyer account** with a **saved card or PayPal**, 
    ALIEXPRESS_APP_SECRET=...
    ```
 
-   Also check `TIKTOK_FEE_RATE` against your Seller Center fee page, and set `MARKUP_MULTIPLIER` and `MIN_PROFIT` to what you want.
+   You'll set your markup, minimum profit and TikTok fee rate on the app's **Settings** page in step 4, so you don't need to add them here.
 2. Restart or redeploy. The app refuses to start in live mode if the password or session secret is still the default.
 3. Log in, go to **Settings**, and click **Connect TikTok Shop**. Approve on TikTok's page, and you'll come back showing "✓ Connected — *your shop name*" with a warehouse id.
 4. Click **Connect AliExpress**, approve, and you'll come back connected.
+5. Further down the same page, under **Your rules**, set your markup, minimum profit and TikTok fee rate (check your Seller Center fee page), then click **Save settings**.
 
 Tokens refresh automatically. If one ever expires (for example after a long time offline), just click **Reconnect**.
 
@@ -100,7 +101,7 @@ Tokens refresh automatically. If one ever expires (for example after a long time
 
 If anything fails, the exact message from TikTok or AliExpress appears in red on the page and in the Activity log. Copy that message to a developer (or to me) to adjust.
 
-Once a handful of orders have gone through cleanly, you can set `AUTO_ORDER=true`. Orders that fail a rule (low profit, unknown item, low stock) will still wait for you.
+Once a handful of orders have gone through cleanly, you can tick **Automatic ordering** on the Settings page. Orders that fail a rule (low profit, unknown item, low stock) will still wait for you.
 
 ---
 

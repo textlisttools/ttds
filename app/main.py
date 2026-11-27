@@ -14,7 +14,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import scheduler
 from .clients.mock import MockTikTokClient
+from . import settings_store
 from .config import get_settings
+from .settings_store import current_settings
 from .db import Event, Order, Product, Variant, get_token, init_db, session
 from .services import connections, orders, products
 
@@ -56,7 +58,7 @@ app.add_middleware(SessionMiddleware, secret_key=settings.session_secret,
 
 def render(request: Request, name: str, **ctx):
     flash = request.session.pop("flash", None)
-    return templates.TemplateResponse(request, name, {"s": get_settings(), "flash": flash, **ctx})
+    return templates.TemplateResponse(request, name, {"s": current_settings(), "flash": flash, **ctx})
 
 
 def back(request: Request, url: str, message: str = "", level: str = "ok"):
@@ -78,7 +80,7 @@ def login_page(request: Request):
 
 @app.post("/login")
 def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    s = get_settings()
+    s = current_settings()
     ok = hmac.compare_digest(username, s.dashboard_username) and \
         hmac.compare_digest(password, s.dashboard_password)
     if not ok:
@@ -96,7 +98,7 @@ def logout(request: Request):
 # -------------------------------------------------------------- Dashboard --
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
-    s = get_settings()
+    s = current_settings()
     with session() as db:
         all_orders = list(db.exec(select(Order).order_by(Order.created_at.desc())))
         counts = {}
@@ -130,7 +132,7 @@ def run_job(request: Request, name: str):
 
 @app.post("/mock/order")
 def mock_order(request: Request):
-    if not get_settings().mock_mode:
+    if not current_settings().mock_mode:
         return back(request, "/", "Only available in MOCK_MODE.", "error")
     if not MockTikTokClient().simulate_order():
         return back(request, "/", "Publish a product to (mock) TikTok first.", "error")
@@ -141,7 +143,7 @@ def mock_order(request: Request):
 # ----------------------------------------------------------------- Orders --
 @app.get("/orders", response_class=HTMLResponse)
 def orders_page(request: Request, status: str = ""):
-    s = get_settings()
+    s = current_settings()
     with session() as db:
         q = select(Order).order_by(Order.created_at.desc())
         if status:
@@ -159,12 +161,12 @@ def order_page(request: Request, oid: int):
             return back(request, "/orders", "Order not found.", "error")
         events = list(db.exec(select(Event).where(Event.order_id == oid).order_by(Event.at.desc())))
     return render(request, "order.html", o=o, events=events,
-                  at_risk=orders.at_risk(o, get_settings()))
+                  at_risk=orders.at_risk(o, current_settings()))
 
 
 @app.post("/orders/{oid}/approve")
 def approve(request: Request, oid: int, force: bool = Form(False)):
-    s = get_settings()
+    s = current_settings()
     with session() as db:
         o = db.get(Order, oid)
         try:
@@ -192,7 +194,7 @@ def dismiss(request: Request, oid: int):
 @app.post("/orders/{oid}/tracking")
 def manual_tracking(request: Request, oid: int, tracking_number: str = Form(...),
                     carrier: str = Form(""), provider_id: str = Form("")):
-    s = get_settings()
+    s = current_settings()
     with session() as db:
         o = db.get(Order, oid)
         try:
@@ -208,7 +210,7 @@ def manual_tracking(request: Request, oid: int, tracking_number: str = Form(...)
 def providers(request: Request, oid: int):
     with session() as db:
         o = db.get(Order, oid)
-        tt, _ = connections.tiktok(db, get_settings())
+        tt, _ = connections.tiktok(db, current_settings())
         rows = tt.get_shipping_providers(o.address.get("delivery_option_id", ""))
     return render(request, "providers.html", o=o, rows=rows)
 
@@ -224,7 +226,7 @@ def products_page(request: Request):
 
 @app.post("/products/import")
 def import_product(request: Request, url: str = Form(...), multiplier: str = Form("")):
-    s = get_settings()
+    s = current_settings()
     with session() as db:
         try:
             p = products.import_product(db, s, url, float(multiplier) if multiplier else None)
@@ -235,7 +237,7 @@ def import_product(request: Request, url: str = Form(...), multiplier: str = For
 
 @app.get("/products/{pid}", response_class=HTMLResponse)
 def product_page(request: Request, pid: int):
-    s = get_settings()
+    s = current_settings()
     with session() as db:
         p = db.get(Product, pid)
         if not p:
@@ -272,7 +274,7 @@ async def edit_product(request: Request, pid: int):
 
 @app.post("/products/{pid}/publish")
 def publish(request: Request, pid: int):
-    s = get_settings()
+    s = current_settings()
     with session() as db:
         p = db.get(Product, pid)
         try:
@@ -284,7 +286,7 @@ def publish(request: Request, pid: int):
 
 @app.post("/products/{pid}/sync")
 def sync(request: Request, pid: int):
-    s = get_settings()
+    s = current_settings()
     with session() as db:
         try:
             n = products.sync_product(db, s, db.get(Product, pid))
@@ -310,16 +312,58 @@ def delete(request: Request, pid: int):
 # -------------------------------------------------------- Settings / OAuth --
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
+    s = current_settings()
     with session() as db:
         conn = {p: get_token(db, p) for p in ("tiktok", "aliexpress")}
-    return render(request, "settings.html", conn=conn)
+    env = get_settings()
+    groups: dict[str, list] = {}
+    for rule in settings_store.RULES:
+        groups.setdefault(rule.group, []).append(
+            (rule, settings_store.display_value(s, rule),
+             getattr(s, rule.key) != getattr(env, rule.key)))
+    return render(request, "settings.html", conn=conn, groups=groups,
+                  errors=request.session.pop("settings_errors", None))
+
+
+@app.post("/settings")
+async def save_settings(request: Request):
+    before = current_settings()
+    form = await request.form()
+    errors = settings_store.save(dict(form))
+    if errors:
+        request.session["settings_errors"] = errors
+        return back(request, "/settings#rules", "Nothing was saved — please fix the highlighted values.",
+                    "error")
+    after = current_settings()
+    scheduler.reschedule()
+    msg = "Settings saved and applied."
+    if (before.markup_multiplier, before.markup_fixed, before.max_listed_stock) != \
+            (after.markup_multiplier, after.markup_fixed, after.max_listed_stock):
+        msg += (" Your TikTok prices/stock update at the next price check — or click "
+                "'Update all listings now' to do it immediately.")
+    if after.auto_order and not before.auto_order:
+        msg += " Automatic ordering is ON."
+    with session() as db:
+        from .db import log
+        log(db, f"Settings changed (automatic ordering {'on' if after.auto_order else 'off'}, "
+                f"markup ×{after.markup_multiplier} + ${after.markup_fixed}, "
+                f"min profit ${after.min_profit})")
+        db.commit()
+    return back(request, "/settings#rules", msg)
+
+
+@app.post("/settings/reset")
+def reset_settings(request: Request):
+    settings_store.reset()
+    scheduler.reschedule()
+    return back(request, "/settings#rules", "Settings reset to the defaults from .env.")
 
 
 @app.get("/connect/{platform}")
 def connect(request: Request, platform: str):
     if platform not in ("tiktok", "aliexpress"):
         return back(request, "/settings", "Unknown platform.", "error")
-    s = get_settings()
+    s = current_settings()
     key = s.tiktok_app_key if platform == "tiktok" else s.aliexpress_app_key
     if not s.mock_mode and not key:
         return back(request, "/settings", f"Add your {platform} app key to .env first.", "error")
@@ -331,7 +375,7 @@ def connect(request: Request, platform: str):
 @app.get("/oauth/{platform}/callback")
 def oauth_callback(request: Request, platform: str, code: str = "", state: str = "",
                    error: str = ""):
-    s = get_settings()
+    s = current_settings()
     if platform not in ("tiktok", "aliexpress"):
         return back(request, "/settings", "Unknown platform.", "error")
     expected = request.session.pop(f"oauth_{platform}", None)

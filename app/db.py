@@ -113,6 +113,7 @@ def set_engine(engine) -> None:
 
 
 def init_db() -> None:
+    from . import settings_store  # noqa: F401  (registers the AppSetting table)
     SQLModel.metadata.create_all(get_engine())
 
 

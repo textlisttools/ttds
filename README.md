@@ -8,6 +8,7 @@ A self-hosted tool that:
 4. **Turns TikTok orders into AliExpress orders:** every 10 minutes it pulls new TikTok orders, works out your profit, and (after you click **Approve**) buys the item on AliExpress, shipped straight to your buyer.
 5. **Uploads tracking:** when the AliExpress supplier ships, it sends the tracking number to TikTok and marks the order shipped.
 6. **Warns you** about orders close to TikTok's ship-by deadline.
+7. **Settings page:** change markup, minimum profit, automatic ordering and more from the dashboard.
 
 ## Try it now (no API keys needed)
 
@@ -38,7 +39,9 @@ Follow **[docs/API_KEYS.md](docs/API_KEYS.md)**. In short:
 4. On the **Settings** page, click **Connect** for each platform.
 5. Import one cheap product and walk one real order through by hand before you rely on it.
 
-## Your rules (in `.env`)
+## Your rules (Settings page)
+
+Change these on the dashboard's **Settings** page. Changes apply immediately, with no restart. The values in `.env` are only the starting defaults; **Reset to defaults** goes back to them. API keys and passwords can only be set in `.env` or your host's environment variables, never on the page.
 
 | Setting | Default | Meaning |
 |---|---|---|
