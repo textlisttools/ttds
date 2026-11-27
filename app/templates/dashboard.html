@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "macros.html" import badge, dt, money %}
+{% block content %}
+<section class="stats">
+  <div class="stat"><span>Orders</span><b>{{ stats.orders }}</b></div>
+  <div class="stat"><span>Revenue (placed/shipped)</span><b>{{ money(stats.revenue) }}</b></div>
+  <div class="stat"><span>Est. profit</span><b>{{ money(stats.profit) }}</b></div>
+  <div class="stat"><span>Products listed</span><b>{{ stats.listed }} / {{ stats.products }}</b></div>
+</section>
+
+{% if not conn.tiktok or not conn.aliexpress %}
+<div class="card warn">Connect {% if not conn.tiktok %}TikTok Shop{% endif %}{% if not conn.tiktok and not conn.aliexpress %} and {% endif %}{% if not conn.aliexpress %}AliExpress{% endif %} on the <a href="/settings">Settings</a> page to start.</div>
+{% endif %}
+
+<section class="card">
+  <div class="row-head">
+    <h2>Needs your attention ({{ action|length }})</h2>
+    <div class="actions">
+      <form method="post" action="/jobs/orders"><button class="secondary">Check orders now</button></form>
+      <form method="post" action="/jobs/tracking"><button class="secondary">Check tracking now</button></form>
+      {% if s.mock_mode %}<form method="post" action="/mock/order"><button class="secondary">Simulate a sale</button></form>{% endif %}
+    </div>
+  </div>
+  {% if action %}
+  <table>
+    <tr><th>TikTok order</th><th>Buyer</th><th>Sale</th><th>Est. profit</th><th>Ship by</th><th>Status</th><th></th></tr>
+    {% for o in action %}
+    <tr class="{{ 'risk' if at_risk(o) }}">
+      <td><a href="/orders/{{ o.id }}">{{ o.tiktok_order_id }}</a></td>
+      <td>{{ o.buyer_name }}</td><td>{{ money(o.sale_total) }}</td>
+      <td class="{{ 'neg' if o.est_profit < s.min_profit }}">{{ money(o.est_profit) }}</td>
+      <td>{{ dt(o.ship_by) }}</td><td>{{ badge(o.status) }}<div class="small">{{ o.hold_reason or o.error }}</div></td>
+      <td>{% if o.status == 'needs_approval' %}<form method="post" action="/orders/{{ o.id }}/approve"><button>Approve</button></form>{% else %}<a href="/orders/{{ o.id }}">Review</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">Nothing to approve.</p>{% endif %}
+</section>
+
+{% if risky %}
+<section class="card warn">
+  <h2>At risk of missing TikTok's ship-by deadline</h2>
+  <ul>{% for o in risky %}<li><a href="/orders/{{ o.id }}">{{ o.tiktok_order_id }}</a> — {{ badge(o.status) }} ship by {{ dt(o.ship_by) }} UTC</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Activity</h2>
+  <ul class="log">
+  {% for e in events %}<li class="l-{{ e.level }}"><time>{{ dt(e.at) }}</time> {{ e.message }}</li>{% else %}<li class="muted">No activity yet.</li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

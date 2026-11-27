@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "macros.html" import badge, dt, money %}
+{% block title %}Orders{% endblock %}
+{% block content %}
+<div class="row-head">
+  <h1>Orders</h1>
+  <div class="actions">
+    {% for st in ['', 'needs_approval', 'held', 'error', 'placed', 'shipped', 'cancelled'] %}
+    <a class="chip {{ 'on' if st == status }}" href="/orders{{ '?status=' ~ st if st }}">{{ st.replace('_',' ') or 'all' }}</a>
+    {% endfor %}
+  </div>
+</div>
+<div class="card">
+<table>
+  <tr><th>Created</th><th>TikTok order</th><th>Buyer</th><th>Items</th><th>Sale</th><th>Cost</th><th>Profit</th><th>Ship by</th><th>Status</th><th>Tracking</th></tr>
+  {% for o in rows %}
+  <tr class="{{ 'risk' if at_risk(o) }}">
+    <td>{{ dt(o.created_at) }}</td>
+    <td><a href="/orders/{{ o.id }}">{{ o.tiktok_order_id }}</a></td>
+    <td>{{ o.buyer_name }}</td>
+    <td>{% for it in o.items %}{{ it.quantity }}× {{ it.title[:40] }}<br>{% endfor %}</td>
+    <td>{{ money(o.sale_total) }}</td><td>{{ money(o.est_cost) }}</td>
+    <td class="{{ 'neg' if o.est_profit < 0 }}">{{ money(o.est_profit) }}</td>
+    <td>{{ dt(o.ship_by) }}</td><td>{{ badge(o.status) }}</td>
+    <td>{{ o.tracking_number or '—' }}</td>
+  </tr>
+  {% else %}<tr><td colspan="10" class="muted">No orders.</td></tr>{% endfor %}
+</table>
+</div>
+{% endblock %}

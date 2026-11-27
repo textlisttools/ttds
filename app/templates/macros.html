@@ -1,0 +1,5 @@
+{% macro badge(status) -%}
+<span class="badge b-{{ status }}">{{ status.replace('_', ' ') }}</span>
+{%- endmacro %}
+{% macro dt(d) -%}{{ d.strftime('%b %d, %H:%M') if d else '—' }}{%- endmacro %}
+{% macro money(x) -%}${{ '%.2f'|format(x or 0) }}{%- endmacro %}

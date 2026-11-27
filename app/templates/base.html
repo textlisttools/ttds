@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}TTDS{% endblock %} · TikTok dropshipping</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% if request.session.get('user') %}
+<header class="top">
+  <a class="brand" href="/">TTDS</a>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/orders">Orders</a>
+    <a href="/products">Products</a>
+    <a href="/settings">Settings</a>
+    <a href="/logout" class="muted">Log out</a>
+  </nav>
+</header>
+{% if s.mock_mode %}<div class="banner">MOCK MODE — fake data, nothing is listed or bought. Set <code>MOCK_MODE=false</code> in .env once your API keys are in.</div>{% endif %}
+{% endif %}
+<main>
+{% if flash %}<div class="flash {{ flash.level }}">{{ flash.msg }}</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

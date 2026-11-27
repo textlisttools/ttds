@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "macros.html" import dt %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<div class="grid2">
+{% for key, label in [('tiktok', 'TikTok Shop'), ('aliexpress', 'AliExpress')] %}
+<section class="card">
+  <h2>{{ label }}</h2>
+  {% set t = conn[key] %}
+  {% if t %}
+  <p>✓ Connected{% if t.extra.shop_name %} — {{ t.extra.shop_name }}{% endif %}{% if t.extra.user_nick %} — {{ t.extra.user_nick }}{% endif %}</p>
+  <p class="small">Token expires {{ dt(t.expires_at) }} (refreshed automatically).{% if key == 'tiktok' %} Warehouse: {{ t.extra.warehouse_id or 'none found' }}{% endif %}</p>
+  <a class="button secondary" href="/connect/{{ key }}">Reconnect</a>
+  {% else %}
+  <p>Not connected.</p>
+  <a class="button" href="/connect/{{ key }}">Connect {{ label }}</a>
+  {% endif %}
+  <p class="small">Redirect URL to register: <code>{{ s.base_url }}/oauth/{{ key }}/callback</code></p>
+</section>
+{% endfor %}
+</div>
+<section class="card">
+  <h2>Rules (edit in <code>.env</code>, then restart)</h2>
+  <table>
+    <tr><td>Ordering</td><td><b>{{ 'Automatic' if s.auto_order else 'You approve each order' }}</b> (<code>AUTO_ORDER</code>)</td></tr>
+    <tr><td>Markup</td><td>(cost + shipping) × {{ s.markup_multiplier }} + ${{ s.markup_fixed }} (<code>MARKUP_MULTIPLIER</code>, <code>MARKUP_FIXED</code>)</td></tr>
+    <tr><td>Minimum profit</td><td>${{ s.min_profit }} after {{ (s.tiktok_fee_rate*100)|round(1) }}% fees (<code>MIN_PROFIT</code>, <code>TIKTOK_FEE_RATE</code>)</td></tr>
+    <tr><td>Import only</td><td>{% if s.require_local_warehouse %}ships from {{ s.ship_to_country }}, {% endif %}≤ {{ s.max_delivery_days }} day delivery</td></tr>
+    <tr><td>Max stock shown on TikTok</td><td>{{ s.max_listed_stock }}</td></tr>
+    <tr><td>Schedules</td><td>orders every {{ s.order_poll_minutes }} min · tracking every {{ s.tracking_poll_minutes }} min · prices/stock every {{ s.monitor_poll_minutes }} min</td></tr>
+  </table>
+</section>
+{% endblock %}

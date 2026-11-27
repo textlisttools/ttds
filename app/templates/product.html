@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "macros.html" import badge, dt, money %}
+{% block title %}{{ p.title[:40] }}{% endblock %}
+{% block content %}
+<p><a href="/products">← Products</a></p>
+<h1>{{ p.title }} {{ badge(p.status) }}</h1>
+{% if p.error %}<div class="flash error">{{ p.error }}</div>{% endif %}
+<p class="small">AliExpress product {{ p.ae_product_id }}{% if p.tiktok_product_id %} · TikTok product {{ p.tiktok_product_id }}{% endif %} · last checked {{ dt(p.last_checked_at) }}</p>
+<div class="gallery">{% for i in p.images %}<img src="{{ i }}" alt="">{% endfor %}</div>
+
+<form method="post" action="/products/{{ p.id }}/edit" class="card stack">
+  {% set locked = p.tiktok_product_id %}
+  <label>Title <input name="title" value="{{ p.title }}" maxlength="255" {{ 'disabled' if locked }}></label>
+  <label>Description <textarea name="description" rows="5" {{ 'disabled' if locked }}>{{ p.description }}</textarea></label>
+  <table>
+    <tr><th>Variant</th><th>Ships in</th><th>AE cost</th><th>AE shipping</th><th>AE stock</th><th>Your price</th><th>Est. profit / unit</th><th>Listed</th></tr>
+    {% for v in variants %}
+    <tr><td>{{ v.name }}</td><td>{{ v.delivery_days }} d</td><td>{{ money(v.cost) }}</td><td>{{ money(v.shipping_cost) }}</td><td>{{ v.ae_stock }}</td>
+      <td><input name="price_{{ v.id }}" value="{{ '%.2f'|format(v.price) }}" class="num" {{ 'disabled' if locked }}></td>
+      <td class="{{ 'neg' if profit(v) < s.min_profit }}">{{ money(profit(v)) }}</td><td>{{ v.listed_stock }}</td></tr>
+    {% endfor %}
+  </table>
+  {% if not locked %}<button class="secondary">Save changes</button>{% endif %}
+</form>
+<div class="actions">
+  {% if not p.tiktok_product_id %}
+  <form method="post" action="/products/{{ p.id }}/publish"><button>Publish to TikTok Shop</button></form>
+  <form method="post" action="/products/{{ p.id }}/delete" onsubmit="return confirm('Delete this draft?')"><button class="secondary">Delete draft</button></form>
+  {% else %}
+  <form method="post" action="/products/{{ p.id }}/sync"><button class="secondary">Re-check AliExpress now</button></form>
+  {% endif %}
+</div>
+<section class="card"><h2>History</h2>
+<ul class="log">{% for e in events %}<li class="l-{{ e.level }}"><time>{{ dt(e.at) }}</time> {{ e.message }}</li>{% endfor %}</ul></section>
+{% endblock %}

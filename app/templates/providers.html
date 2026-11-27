@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/orders/{{ o.id }}">← Order {{ o.tiktok_order_id }}</a></p>
+<div class="card"><h1>TikTok shipping providers</h1>
+<table><tr><th>Name</th><th>Id</th></tr>
+{% for r in rows %}<tr><td>{{ r.name }}</td><td><code>{{ r.id }}</code></td></tr>{% endfor %}
+</table></div>
+{% endblock %}

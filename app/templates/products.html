@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "macros.html" import badge, dt, money %}
+{% block title %}Products{% endblock %}
+{% block content %}
+<div class="row-head"><h1>Products</h1>
+  <form method="post" action="/jobs/monitor"><button class="secondary">Re-check all prices &amp; stock</button></form></div>
+<form method="post" action="/products/import" class="card inline">
+  <input name="url" placeholder="Paste an AliExpress product link or id" required>
+  <input name="multiplier" placeholder="Markup × (default {{ s.markup_multiplier }})" inputmode="decimal">
+  <button>Import</button>
+  <p class="small">Rules: {% if s.require_local_warehouse %}ships from {{ s.ship_to_country }}, {% endif %}delivery ≤ {{ s.max_delivery_days }} days, in stock. Price = (cost + shipping) × {{ s.markup_multiplier }} + ${{ s.markup_fixed }}, rounded to .99.</p>
+</form>
+<div class="card">
+<table>
+  <tr><th></th><th>Product</th><th>Variants</th><th>Price</th><th>Listed stock</th><th>Status</th><th>Checked</th></tr>
+  {% for p in rows %}{% set vs = variants[p.id] %}
+  <tr>
+    <td>{% if p.images %}<img class="thumb" src="{{ p.images[0] }}" alt="">{% endif %}</td>
+    <td><a href="/products/{{ p.id }}">{{ p.title[:80] }}</a></td>
+    <td>{{ vs|length }}</td>
+    <td>{% if vs %}{{ money(vs|map(attribute='price')|min) }}{% if vs|length > 1 %}–{{ money(vs|map(attribute='price')|max) }}{% endif %}{% endif %}</td>
+    <td>{{ vs|sum(attribute='listed_stock') }}</td>
+    <td>{{ badge(p.status) }}</td><td>{{ dt(p.last_checked_at) }}</td>
+  </tr>
+  {% else %}<tr><td colspan="7" class="muted">No products yet — paste an AliExpress link above.</td></tr>{% endfor %}
+</table>
+</div>
+{% endblock %}

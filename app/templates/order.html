@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "macros.html" import badge, dt, money %}
+{% block title %}Order {{ o.tiktok_order_id }}{% endblock %}
+{% block content %}
+<p><a href="/orders">← Orders</a></p>
+<h1>TikTok order {{ o.tiktok_order_id }} {{ badge(o.status) }}</h1>
+{% if at_risk %}<div class="flash error">Ship-by deadline is {{ dt(o.ship_by) }} UTC — upload tracking before then or TikTok may cancel the order.</div>{% endif %}
+{% if o.hold_reason %}<div class="flash error">Held: {{ o.hold_reason }}</div>{% endif %}
+{% if o.error %}<div class="flash error">{{ o.error }}</div>{% endif %}
+
+<div class="grid2">
+<section class="card">
+  <h2>Items</h2>
+  <table>
+    <tr><th>Item</th><th>Qty</th><th>Sale price</th><th>Linked</th></tr>
+    {% for it in o.items %}<tr><td>{{ it.title }}</td><td>{{ it.quantity }}</td><td>{{ money(it.sale_price) }}</td>
+      <td>{% if it.variant_id %}✓{% else %}<span class="neg">not imported</span>{% endif %}</td></tr>{% endfor %}
+  </table>
+  <p>Sale {{ money(o.sale_total) }} · Est. supplier cost {{ money(o.est_cost) }} · Est. profit <b>{{ money(o.est_profit) }}</b> (after {{ (s.tiktok_fee_rate*100)|round(1) }}% TikTok fees)</p>
+  {% if o.status in ['needs_approval', 'held', 'error'] and not o.ae_order_ids %}
+  <div class="actions">
+    {% if o.status != 'held' %}
+    <form method="post" action="/orders/{{ o.id }}/approve"><button>Approve &amp; buy on AliExpress</button></form>
+    {% else %}
+    <form method="post" action="/orders/{{ o.id }}/approve" onsubmit="return confirm('Buy this order even though it is held?')"><input type="hidden" name="force" value="true"><button class="danger">Approve anyway</button></form>
+    {% endif %}
+    <form method="post" action="/orders/{{ o.id }}/dismiss" onsubmit="return confirm('Stop handling this order here? You must cancel or fulfil it in TikTok Seller Center yourself.')"><button class="secondary">Don't fulfil here</button></form>
+  </div>
+  {% endif %}
+</section>
+<section class="card">
+  <h2>Ship to</h2>
+  <p>{{ o.address.full_name }}<br>{{ o.address.address }} {{ o.address.address2 }}<br>
+  {{ o.address.city }}, {{ o.address.province }} {{ o.address.zip }}<br>{{ o.address.country }} · {{ o.address.phone }}</p>
+  <p class="small">Ship by {{ dt(o.ship_by) }} UTC</p>
+  <h2>AliExpress</h2>
+  <p>{% for id in o.ae_order_ids %}<a href="https://www.aliexpress.com/p/order/detail.html?orderId={{ id }}" target="_blank" rel="noopener">{{ id }}</a><br>{% else %}Not ordered yet.{% endfor %}</p>
+  <p>Tracking: {{ o.tracking_number or '—' }} {{ o.carrier }}</p>
+  {% if o.status == 'placed' %}
+  <form method="post" action="/orders/{{ o.id }}/tracking" class="stack">
+    <b>Enter tracking manually</b>
+    <input name="tracking_number" placeholder="Tracking number" value="{{ o.tracking_number }}" required>
+    <input name="carrier" placeholder="Carrier name (e.g. USPS)" value="{{ o.carrier }}">
+    <input name="provider_id" placeholder="TikTok shipping provider id (optional)">
+    <a class="small" href="/orders/{{ o.id }}/providers">See TikTok provider ids</a>
+    <button>Upload to TikTok</button>
+  </form>
+  {% endif %}
+</section>
+</div>
+<section class="card">
+  <h2>History</h2>
+  <ul class="log">{% for e in events %}<li class="l-{{ e.level }}"><time>{{ dt(e.at) }}</time> {{ e.message }}</li>{% endfor %}</ul>
+</section>
+{% endblock %}
