@@ -32,6 +32,10 @@ def _evaluate(db: Session, s: Settings, order: Order) -> None:
         cost += (v.cost + v.shipping_cost) * it["quantity"]
         if v.ae_stock < it["quantity"]:
             reasons.append(f"AliExpress stock for '{v.name}' is {v.ae_stock}")
+    a = order.address or {}
+    if not a.get("address") or any("*" in str(a.get(k, "")) for k in ("full_name", "address", "zip")):
+        reasons.append("the buyer's address is hidden or missing — copy it from the order in "
+                       "Seller Center into 'Ship to' below")
     order.est_cost = round(cost, 2)
     order.est_profit = profit(order.sale_total, cost, s)
     if not reasons and order.est_profit < s.min_profit:
@@ -41,6 +45,8 @@ def _evaluate(db: Session, s: Settings, order: Order) -> None:
 
 def sync_orders(db: Session, s: Settings) -> int:
     """Pull new 'awaiting shipment' orders from TikTok. Returns how many were new."""
+    if s.tiktok_mode != "api":
+        return 0  # files mode: orders arrive when you upload the Seller Center export
     tt, _ = connections.tiktok(db, s)
     since = int((datetime.now(timezone.utc) - timedelta(days=14)).timestamp())
     remote = tt.search_orders("AWAITING_SHIPMENT", created_after=since)
@@ -151,6 +157,14 @@ def _match_provider(providers: list[dict], carrier: str) -> str | None:
 
 def upload_tracking(db: Session, s: Settings, order: Order, tracking_number: str,
                     carrier: str, provider_id: str | None = None) -> bool:
+    if s.tiktok_mode != "api":
+        # Files mode: queue it for the tracking file you upload in Seller Center.
+        order.tracking_number, order.carrier = tracking_number, carrier
+        order.status, order.error, order.updated_at = "tracking_ready", "", utcnow()
+        db.add(order)
+        log(db, f"Tracking {tracking_number} ({carrier}) ready to upload to TikTok", order_id=order.id)
+        db.commit()
+        return True
     tt, _ = connections.tiktok(db, s)
     if not provider_id:
         providers = tt.get_shipping_providers(order.address.get("delivery_option_id", ""))
@@ -185,6 +199,15 @@ def sync_tracking(db: Session, s: Settings) -> int:
             continue  # waiting for manual carrier selection
         for ae_id in order.ae_order_ids:
             info = ae.get_tracking(ae_id)
+            if info and s.tiktok_mode != "api":
+                order.tracking_number, order.carrier = info["tracking_number"], info["carrier"]
+                order.status, order.updated_at = "tracking_ready", utcnow()
+                db.add(order)
+                log(db, f"Supplier shipped TikTok order {order.tiktok_order_id}: {info['carrier']} "
+                        f"{info['tracking_number']} — ready to upload to TikTok", order_id=order.id)
+                db.commit()
+                done += 1
+                break
             if info:
                 try:
                     done += upload_tracking(db, s, order, info["tracking_number"], info["carrier"])
@@ -195,6 +218,40 @@ def sync_tracking(db: Session, s: Settings) -> int:
                     db.commit()
                 break
     return done
+
+
+def link_item(db: Session, s: Settings, order: Order, index: int, variant_id: int) -> Order:
+    """Connect an order line to one of your imported variants (and remember it for next time)."""
+    v = db.get(Variant, variant_id)
+    if not v or not (0 <= index < len(order.items)):
+        raise ValueError("Unknown item or variant.")
+    items = [dict(i) for i in order.items]
+    items[index]["variant_id"] = v.id
+    if items[index].get("tiktok_sku_id") and not v.tiktok_sku_id:
+        v.tiktok_sku_id = items[index]["tiktok_sku_id"]
+        db.add(v)
+    order.items = items
+    _evaluate(db, s, order)
+    if order.status in ("held", "needs_approval", "error") and not order.ae_order_ids:
+        order.status = "held" if order.hold_reason else "needs_approval"
+    db.add(order)
+    log(db, f"Linked '{items[index]['title'][:40]}' to {v.name} (seller SKU {v.seller_sku})", order_id=order.id)
+    db.commit()
+    return order
+
+
+def update_address(db: Session, s: Settings, order: Order, fields: dict) -> Order:
+    if order.ae_order_ids:
+        raise ValueError("Already ordered on AliExpress — change the address there.")
+    order.address = {**order.address, **{k: v.strip() for k, v in fields.items()}}
+    order.buyer_name = order.address.get("full_name", order.buyer_name)
+    _evaluate(db, s, order)
+    if order.status in ("held", "needs_approval"):
+        order.status = "held" if order.hold_reason else "needs_approval"
+    db.add(order)
+    log(db, "Shipping address updated", order_id=order.id)
+    db.commit()
+    return order
 
 
 def at_risk(order: Order, s: Settings) -> bool:

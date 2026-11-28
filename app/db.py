@@ -56,13 +56,17 @@ class Variant(SQLModel, table=True):
     price: float  # our TikTok selling price
     listed_stock: int = 0
     tiktok_sku_id: Optional[str] = Field(default=None, index=True)
-    seller_sku: str = ""  # we use this to map TikTok order lines back to the variant
+    seller_sku: str = ""
+    # Files mode: the price/stock we last confirmed is on TikTok. Different = an update is due.
+    tt_price: Optional[float] = None
+    tt_stock: Optional[int] = None  # we use this to map TikTok order lines back to the variant
 
 
 class Order(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     tiktok_order_id: str = Field(index=True, unique=True)
     # needs_approval -> placing -> placed (awaiting AliExpress payment/shipping)
+    #   -> tracking_ready (files mode: tracking found, waiting for you to upload it)
     #   -> shipped (tracking uploaded to TikTok)
     # held = blocked by a rule (low profit, unknown item...) and needs you to look
     # cancelled | error
@@ -114,11 +118,30 @@ def set_engine(engine) -> None:
 
 def init_db() -> None:
     from . import settings_store  # noqa: F401  (registers the AppSetting table)
-    SQLModel.metadata.create_all(get_engine())
+    engine = get_engine()
+    SQLModel.metadata.create_all(engine)
+    _add_missing_columns(engine)
+
+
+def _add_missing_columns(engine) -> None:
+    """Tiny migration: add new nullable columns to tables created by an older version."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in existing:
+                    ddl = col.type.compile(engine.dialect)
+                    conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl}'))
 
 
 def session() -> Session:
-    return Session(get_engine())
+    # Keep loaded objects usable after commit (pages read them after saving).
+    return Session(get_engine(), expire_on_commit=False)
 
 
 def log(s: Session, message: str, level: str = "info", order_id=None, product_id=None) -> None:

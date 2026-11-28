@@ -44,6 +44,7 @@ button.danger { background: var(--err); border-color: var(--err); color: #fff; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: .78rem; font-weight: 600; background: var(--line); white-space: nowrap; }
 .b-needs_approval, .b-held, .b-draft { background: var(--warn-bg); color: var(--warn); }
 .b-error, .b-cancelled { background: var(--err-bg); color: var(--err); }
+.b-tracking_ready { background: #e6f0ff; color: #1d4ed8; }
 .b-placed, .b-shipped, .b-listed { background: var(--ok-bg); color: var(--ok); }
 .chip { padding: 3px 10px; border: 1px solid var(--line); border-radius: 99px; text-decoration: none; font-size: .85rem; }
 .chip.on { background: var(--accent); color: var(--accent-text); }
@@ -66,3 +67,14 @@ legend { font-weight: 700; padding: 0 6px; }
 .switch input { width: 20px; height: 20px; margin-top: 2px; flex: none; accent-color: var(--accent); }
 .tag { font-size: .7rem; font-weight: 600; padding: 0 6px; border-radius: 99px; background: var(--warn-bg); color: var(--warn); }
 .flash ul { margin: 0; padding-left: 18px; }
+select { width: 100%; max-width: 320px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 14px; }
+.steps > li { counter-increment: step; position: relative; padding: 0 0 14px 36px; display: grid; gap: 8px; border-bottom: 1px solid var(--line); }
+.steps > li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-text); display: grid; place-items: center; font-size: .8rem; font-weight: 700; }
+.steps > li:last-child { border-bottom: 0; padding-bottom: 0; }
+.steps ul { margin: 6px 0 0; padding-left: 18px; }
+.upload { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.upload input[type=file] { width: auto; flex: 1 1 220px; max-width: 360px; padding: 6px; }
+details summary { cursor: pointer; }
+.opt { display: grid; gap: 2px; flex: 1 1 220px; max-width: 360px; }
+.opt input[type=file] { width: 100%; padding: 6px; }

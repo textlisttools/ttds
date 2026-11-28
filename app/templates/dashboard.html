@@ -3,12 +3,61 @@
 {% block content %}
 <section class="stats">
   <div class="stat"><span>Orders</span><b>{{ stats.orders }}</b></div>
-  <div class="stat"><span>Revenue (placed/shipped)</span><b>{{ money(stats.revenue) }}</b></div>
+  <div class="stat"><span>Revenue (ordered)</span><b>{{ money(stats.revenue) }}</b></div>
   <div class="stat"><span>Est. profit</span><b>{{ money(stats.profit) }}</b></div>
   <div class="stat"><span>Products listed</span><b>{{ stats.listed }} / {{ stats.products }}</b></div>
 </section>
 
-{% if not conn.tiktok or not conn.aliexpress %}
+{% set files = s.tiktok_mode != 'api' %}
+{% if files %}
+{% if not conn.aliexpress %}<div class="card warn">Connect AliExpress on the <a href="/settings">Settings</a> page to start.</div>{% endif %}
+<section class="card routine">
+  <h2>Daily routine</h2>
+  <ol class="steps">
+    <li>
+      <div><b>Import new orders.</b> In Seller Center go to <i>Orders</i>, filter <i>To ship / Awaiting shipment</i>, click <i>Export</i>, then upload the file here.
+      {% if s.mock_mode %}<br><a class="small" href="/files/sample-orders">Mock mode: download a sample export to try</a>{% endif %}</div>
+      <form method="post" action="/files/orders" enctype="multipart/form-data" class="upload">
+        <input type="file" name="file" accept=".xlsx,.csv" required>
+        <button>Upload orders</button>
+      </form>
+    </li>
+    <li>
+      <div><b>Approve orders</b> in "Needs your attention" below. TTDS buys them on AliExpress.</div>
+    </li>
+    <li>
+      <div><b>Upload tracking ({{ tracking|length }} ready).</b>
+      {% if tracking %}Download the file, then in Seller Center go to <i>Orders → Bulk ship</i> (or <i>Batch shipping</i>) and upload it.
+      <details class="small"><summary>Upload rejected? Use TikTok's own template</summary>
+        Download the blank bulk-shipping template from Seller Center, choose it below, and TTDS fills it in for you.</details>
+      {% else %}<span class="muted">Nothing yet. Tracking appears here when suppliers ship (checked every {{ s.tracking_poll_minutes }} min).</span>{% endif %}</div>
+      {% if tracking %}
+      <form method="post" action="/files/tracking" enctype="multipart/form-data" class="upload">
+        <label class="small opt">TikTok's template (optional) <input type="file" name="template" accept=".xlsx,.csv"></label>
+        <button>Download tracking file</button>
+      </form>
+      <form method="post" action="/files/tracking/done" onsubmit="return confirm('Did TikTok accept the tracking file?')">
+        {% for o in tracking %}<input type="hidden" name="order_id" value="{{ o.id }}">{% endfor %}
+        <button class="secondary">I've uploaded it, mark {{ tracking|length }} as shipped</button>
+      </form>
+      {% endif %}
+    </li>
+    <li>
+      <div><b>Price &amp; stock changes ({{ updates|length }}).</b>
+      {% if updates %}AliExpress changed. Download the list, then update those items in Seller Center (<i>Products → Manage products → Bulk edit</i>), or edit them one by one.
+      <ul class="small">{% for p, v in updates[:5] %}<li>{{ p.title[:40] }} / {{ v.name }} ({{ v.seller_sku }}): {% if v.tt_price is not none and (v.tt_price - v.price)|abs >= 0.01 %}price ${{ '%.2f'|format(v.tt_price) }} → <b>${{ '%.2f'|format(v.price) }}</b> {% endif %}{% if v.tt_stock != v.listed_stock %}stock {{ v.tt_stock }} → <b>{{ v.listed_stock }}</b>{% endif %}</li>{% endfor %}{% if updates|length > 5 %}<li>…and {{ updates|length - 5 }} more</li>{% endif %}</ul>
+      {% else %}<span class="muted">All listings match AliExpress.</span>{% endif %}</div>
+      {% if updates %}
+      <form method="post" action="/files/prices" enctype="multipart/form-data" class="upload">
+        <label class="small opt">TikTok's bulk-edit file (optional) <input type="file" name="template" accept=".xlsx,.csv"></label>
+        <button>Download changes</button>
+      </form>
+      <form method="post" action="/files/prices/done" onsubmit="return confirm('Did you update these on TikTok?')"><button class="secondary">Done, I've updated TikTok</button></form>
+      {% endif %}
+    </li>
+  </ol>
+</section>
+{% elif not conn.tiktok or not conn.aliexpress %}
 <div class="card warn">Connect {% if not conn.tiktok %}TikTok Shop{% endif %}{% if not conn.tiktok and not conn.aliexpress %} and {% endif %}{% if not conn.aliexpress %}AliExpress{% endif %} on the <a href="/settings">Settings</a> page to start.</div>
 {% endif %}
 
@@ -16,9 +65,9 @@
   <div class="row-head">
     <h2>Needs your attention ({{ action|length }})</h2>
     <div class="actions">
-      <form method="post" action="/jobs/orders"><button class="secondary">Check orders now</button></form>
+      {% if not files %}<form method="post" action="/jobs/orders"><button class="secondary">Check orders now</button></form>{% endif %}
       <form method="post" action="/jobs/tracking"><button class="secondary">Check tracking now</button></form>
-      {% if s.mock_mode %}<form method="post" action="/mock/order"><button class="secondary">Simulate a sale</button></form>{% endif %}
+      {% if s.mock_mode and not files %}<form method="post" action="/mock/order"><button class="secondary">Simulate a sale</button></form>{% endif %}
     </div>
   </div>
   {% if action %}

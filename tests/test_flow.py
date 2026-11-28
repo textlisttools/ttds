@@ -32,7 +32,8 @@ def test_requires_connection(settings):
         products.import_product(d, settings, "1005006123456789")
 
 
-def test_full_flow(settings):
+def test_full_flow(api_settings):
+    settings = api_settings
     connect_both(settings)
     with db.session() as d:
         p = products.import_product(d, settings, "https://www.aliexpress.us/item/1005006123456789.html")
@@ -67,7 +68,8 @@ def test_full_flow(settings):
         assert o.status == "shipped" and o.tracking_number
 
 
-def test_low_profit_is_held(settings):
+def test_low_profit_is_held(api_settings):
+    settings = api_settings
     connect_both(settings)
     with db.session() as d:
         p = products.import_product(d, settings, "1005006123456789")
@@ -85,7 +87,8 @@ def test_low_profit_is_held(settings):
         assert not o.ae_order_ids
 
 
-def test_price_change_pushed(settings):
+def test_price_change_pushed(api_settings):
+    settings = api_settings
     connect_both(settings)
     with db.session() as d:
         p = products.import_product(d, settings, "1005006123456789")
@@ -100,7 +103,11 @@ def test_price_change_pushed(settings):
 
 def test_pages_render(settings):
     from app.main import app
+    from app.settings_store import AppSetting
     with TestClient(app) as c:
+        with db.session() as d:  # this test covers the direct-API mode
+            d.add(AppSetting(key="tiktok_mode", value="api"))
+            d.commit()
         assert c.get("/", follow_redirects=False).status_code == 303
         r = c.post("/login", data={"username": "admin", "password": "test-pass"})
         assert r.status_code == 200

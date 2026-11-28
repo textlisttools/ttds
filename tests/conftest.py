@@ -26,3 +26,9 @@ def fresh_db():
 @pytest.fixture
 def settings():
     return get_settings()
+
+
+@pytest.fixture
+def api_settings():
+    """Settings for the direct TikTok API mode (files mode is the default)."""
+    return get_settings().model_copy(update={"tiktok_mode": "api"})

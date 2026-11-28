@@ -7,6 +7,10 @@
 {% for key, label in [('tiktok', 'TikTok Shop'), ('aliexpress', 'AliExpress')] %}
 <section class="card">
   <h2>{{ label }}</h2>
+  {% if key == 'tiktok' and s.tiktok_mode != 'api' %}
+  <p>Files mode, so no connection is needed. You'll export orders from Seller Center and upload the files TTDS makes.</p>
+  <p class="small">When you get TikTok API keys, add them to your host's variables and switch "How TTDS talks to TikTok" below to API.</p>
+  {% else %}
   {% set t = conn[key] %}
   {% if t %}
   <p>✓ Connected{% if t.extra.shop_name %} — {{ t.extra.shop_name }}{% endif %}{% if t.extra.user_nick %} — {{ t.extra.user_nick }}{% endif %}</p>
@@ -17,6 +21,7 @@
   <a class="button" href="/connect/{{ key }}">Connect {{ label }}</a>
   {% endif %}
   <p class="small">Redirect URL to register: <code>{{ s.base_url }}/oauth/{{ key }}/callback</code></p>
+  {% endif %}
 </section>
 {% endfor %}
 </div>
@@ -37,6 +42,12 @@
           {% if rule.key == 'auto_order' %}data-confirm="Turn on automatic ordering? Profitable TikTok orders will be bought and paid on AliExpress without asking you."{% endif %}>
         <span><b>{{ rule.label }}</b>{% if custom %} <span class="tag" title="Different from the default in .env">changed</span>{% endif %}<br><span class="small">{{ rule.help }}</span></span>
       </label>
+      {% elif rule.choices %}
+      <label for="f-{{ rule.key }}"><b>{{ rule.label }}</b>{% if custom %} <span class="tag" title="Different from the default in .env">changed</span>{% endif %}</label>
+      <select id="f-{{ rule.key }}" name="{{ rule.key }}">
+        {% for val, lab in rule.choices %}<option value="{{ val }}" {{ 'selected' if val == value }}>{{ lab }}</option>{% endfor %}
+      </select>
+      <span class="small">{{ rule.help }}</span>
       {% else %}
       <label for="f-{{ rule.key }}"><b>{{ rule.label }}</b>{% if custom %} <span class="tag" title="Different from the default in .env">changed</span>{% endif %}</label>
       <div class="input-unit">

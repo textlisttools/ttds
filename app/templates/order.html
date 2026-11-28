@@ -14,7 +14,14 @@
   <table>
     <tr><th>Item</th><th>Qty</th><th>Sale price</th><th>Linked</th></tr>
     {% for it in o.items %}<tr><td>{{ it.title }}</td><td>{{ it.quantity }}</td><td>{{ money(it.sale_price) }}</td>
-      <td>{% if it.variant_id %}✓{% else %}<span class="neg">not imported</span>{% endif %}</td></tr>{% endfor %}
+      <td>{% if it.variant_id %}✓{% elif o.ae_order_ids %}<span class="neg">not linked</span>{% else %}
+        <form method="post" action="/orders/{{ o.id }}/link" class="stack">
+          <span class="neg small">Not recognised (seller SKU "{{ it.seller_sku or '—' }}"). Which product is it?</span>
+          <input type="hidden" name="index" value="{{ loop.index0 }}">
+          <select name="variant_id" required><option value="">Choose…</option>
+            {% for vid, label in choices %}<option value="{{ vid }}">{{ label }}</option>{% endfor %}</select>
+          <button class="secondary">Link</button>
+        </form>{% endif %}</td></tr>{% endfor %}
   </table>
   <p>Sale {{ money(o.sale_total) }} · Est. supplier cost {{ money(o.est_cost) }} · Est. profit <b>{{ money(o.est_profit) }}</b> (after {{ (s.tiktok_fee_rate*100)|round(1) }}% TikTok fees)</p>
   {% if o.status in ['needs_approval', 'held', 'error'] and not o.ae_order_ids %}
@@ -32,18 +39,38 @@
   <h2>Ship to</h2>
   <p>{{ o.address.full_name }}<br>{{ o.address.address }} {{ o.address.address2 }}<br>
   {{ o.address.city }}, {{ o.address.province }} {{ o.address.zip }}<br>{{ o.address.country }} · {{ o.address.phone }}</p>
+  {% if not o.ae_order_ids and o.status != 'cancelled' %}
+  <details {{ 'open' if 'address' in (o.hold_reason or '') }}>
+    <summary>Edit address</summary>
+    <form method="post" action="/orders/{{ o.id }}/address" class="stack">
+      <span class="small">Copy these from the order details in Seller Center.</span>
+      <input name="full_name" placeholder="Full name" value="{{ o.address.full_name }}" required>
+      <input name="phone" placeholder="Phone" value="{{ o.address.phone }}">
+      <input name="address" placeholder="Street address" value="{{ o.address.address }}" required>
+      <input name="address2" placeholder="Apt / suite (optional)" value="{{ o.address.address2 }}">
+      <input name="city" placeholder="City" value="{{ o.address.city }}" required>
+      <input name="province" placeholder="State" value="{{ o.address.province }}" required>
+      <input name="zip" placeholder="ZIP code" value="{{ o.address.zip }}" required>
+      <input name="country" placeholder="Country code (US)" value="{{ o.address.country or s.ship_to_country }}" maxlength="2" required>
+      <button class="secondary">Save address</button>
+    </form>
+  </details>
+  {% endif %}
   <p class="small">Ship by {{ dt(o.ship_by) }} UTC</p>
   <h2>AliExpress</h2>
   <p>{% for id in o.ae_order_ids %}<a href="https://www.aliexpress.com/p/order/detail.html?orderId={{ id }}" target="_blank" rel="noopener">{{ id }}</a><br>{% else %}Not ordered yet.{% endfor %}</p>
   <p>Tracking: {{ o.tracking_number or '—' }} {{ o.carrier }}</p>
+  {% if o.status == 'tracking_ready' %}<p class="small">Waiting for you to upload this tracking to TikTok (Dashboard → Daily routine, step 3).</p>{% endif %}
   {% if o.status == 'placed' %}
   <form method="post" action="/orders/{{ o.id }}/tracking" class="stack">
     <b>Enter tracking manually</b>
     <input name="tracking_number" placeholder="Tracking number" value="{{ o.tracking_number }}" required>
     <input name="carrier" placeholder="Carrier name (e.g. USPS)" value="{{ o.carrier }}">
+    {% if s.tiktok_mode == 'api' %}
     <input name="provider_id" placeholder="TikTok shipping provider id (optional)">
     <a class="small" href="/orders/{{ o.id }}/providers">See TikTok provider ids</a>
-    <button>Upload to TikTok</button>
+    {% endif %}
+    <button>{{ 'Upload to TikTok' if s.tiktok_mode == 'api' else 'Save tracking' }}</button>
   </form>
   {% endif %}
 </section>

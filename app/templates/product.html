@@ -9,7 +9,7 @@
 <div class="gallery">{% for i in p.images %}<img src="{{ i }}" alt="">{% endfor %}</div>
 
 <form method="post" action="/products/{{ p.id }}/edit" class="card stack">
-  {% set locked = p.tiktok_product_id %}
+  {% set locked = p.tiktok_product_id or (s.tiktok_mode != 'api' and p.status in ['listed', 'paused']) %}
   <label>Title <input name="title" value="{{ p.title }}" maxlength="255" {{ 'disabled' if locked }}></label>
   <label>Description <textarea name="description" rows="5" {{ 'disabled' if locked }}>{{ p.description }}</textarea></label>
   <table>
@@ -22,6 +22,41 @@
   </table>
   {% if not locked %}<button class="secondary">Save changes</button>{% endif %}
 </form>
+{% if s.tiktok_mode != 'api' %}
+{% if p.status in ['listed', 'paused'] %}
+<div class="actions">
+  <form method="post" action="/products/{{ p.id }}/sync"><button class="secondary">Re-check AliExpress now</button></form>
+  <form method="post" action="/products/{{ p.id }}/unlist" onsubmit="return confirm('Stop tracking this as listed? (It stays on TikTok until you remove it there.)')"><button class="secondary">Move back to draft</button></form>
+</div>
+<p class="small">Seller SKUs on TikTok: {% for v in variants %}<code>{{ v.seller_sku }}</code> ({{ v.name }}){{ ', ' if not loop.last }}{% endfor %}</p>
+{% else %}
+<section class="card listing">
+  <h2>List it on TikTok</h2>
+  <ol class="steps">
+    <li><div>In Seller Center go to <b>Products → Add new product</b>.</div></li>
+    <li><div><b>Product name</b> <button type="button" class="copy secondary" data-copy="{{ p.title }}">Copy</button><br><span class="small">{{ p.title }}</span></div></li>
+    <li><div><b>Photos</b>: <a class="button secondary" href="/products/{{ p.id }}/images.zip">Download photos (.zip)</a> and upload them. Use the first one as the main image.</div></li>
+    <li><div><b>Description</b> <button type="button" class="copy secondary" data-copy="{{ p.description|plaintext }}">Copy</button>
+      <span class="small">Check it reads well and doesn't mention AliExpress, other brands or shipping times from China.</span></div></li>
+    <li><div><b>Variants, prices and stock</b>. For each one, type the <b>Seller SKU</b> exactly as shown. That's how TTDS recognises your orders.
+      <table>
+        <tr><th>Variant</th><th>Price</th><th>Stock</th><th>Seller SKU</th></tr>
+        {% for v in variants %}<tr><td>{{ v.name }}</td><td>{{ money(v.price) }}</td><td>{{ v.listed_stock }}</td>
+          <td><code>{{ v.seller_sku }}</code> <button type="button" class="copy secondary" data-copy="{{ v.seller_sku }}">Copy</button></td></tr>{% endfor %}
+      </table></div></li>
+    <li><div><b>Shipping</b>: pick your free-shipping template. Enter a package weight and size (estimate if AliExpress doesn't list them).</div></li>
+    <li><div>Submit the listing, then tell TTDS:</div>
+      <form method="post" action="/products/{{ p.id }}/listed" class="upload">
+        <input name="tiktok_product_id" placeholder="TikTok product ID (optional)">
+        <button>I've listed it</button>
+      </form></li>
+  </ol>
+</section>
+<div class="actions">
+  <form method="post" action="/products/{{ p.id }}/delete" onsubmit="return confirm('Delete this draft?')"><button class="secondary">Delete draft</button></form>
+</div>
+{% endif %}
+{% else %}
 <div class="actions">
   {% if not p.tiktok_product_id %}
   <form method="post" action="/products/{{ p.id }}/publish"><button>Publish to TikTok Shop</button></form>
@@ -30,6 +65,16 @@
   <form method="post" action="/products/{{ p.id }}/sync"><button class="secondary">Re-check AliExpress now</button></form>
   {% endif %}
 </div>
+{% endif %}
+<script>
+document.querySelectorAll('button.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    navigator.clipboard.writeText(b.dataset.copy).then(function () {
+      var t = b.textContent; b.textContent = 'Copied ✓'; setTimeout(function () { b.textContent = t; }, 1500);
+    });
+  });
+});
+</script>
 <section class="card"><h2>History</h2>
 <ul class="log">{% for e in events %}<li class="l-{{ e.level }}"><time>{{ dt(e.at) }}</time> {{ e.message }}</li>{% endfor %}</ul></section>
 {% endblock %}

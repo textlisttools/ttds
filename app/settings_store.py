@@ -28,9 +28,17 @@ class Rule:
     max: float | None = None
     step: str = "any"
     unit: str = ""
+    choices: tuple = ()  # (value, label) pairs for a dropdown
 
 
 RULES: list[Rule] = [
+    Rule("tiktok_mode", "How TTDS talks to TikTok",
+         "Files: you export orders and upload tracking/price files in Seller Center (no API keys needed). "
+         "API: fully automatic, needs a TikTok Shop Partner Center app.", str, "TikTok",
+         choices=(("files", "Files (upload/download spreadsheets)"), ("api", "API (automatic, needs keys)"))),
+    Rule("handling_days", "Days to ship",
+         "Files mode: if the orders export has no ship-by column, TTDS assumes this many days after payment.",
+         int, "TikTok", 1, 10, "1", "days"),
     Rule("auto_order", "Automatic ordering",
          "On: profitable orders are bought on AliExpress automatically. Off: you click Approve on each "
          "order. Orders that break a rule are always held for you either way.", bool, "Ordering"),
@@ -114,6 +122,11 @@ def save(form: dict) -> list[str]:
             values[rule.key] = "true" if form.get(rule.key) in ("on", "true", "1") else "false"
             continue
         raw = str(form.get(rule.key, "")).strip()
+        if rule.choices:
+            if raw not in [c[0] for c in rule.choices]:
+                errors.append(f"{rule.label}: pick one of the options.")
+            values[rule.key] = raw
+            continue
         if rule.kind is str:
             if rule.key == "ship_to_country" and (len(raw) != 2 or not raw.isalpha()):
                 errors.append(f"{rule.label}: use a 2-letter code like US.")

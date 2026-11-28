@@ -5,8 +5,8 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import func, select
@@ -18,10 +18,23 @@ from . import settings_store
 from .config import get_settings
 from .settings_store import current_settings
 from .db import Event, Order, Product, Variant, get_token, init_db, session
-from .services import connections, orders, products
+from .services import connections, orders, products, tiktok_files
+from .services.sheets import SheetError
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
+
+
+def _plaintext(html: str) -> str:
+    import html as html_lib
+    import re
+    text = re.sub(r"(?i)<br\s*/?>|</p>|</li>|</div>|</h\d>", "\n", html or "")
+    text = re.sub(r"<[^>]+>", "", text)
+    text = html_lib.unescape(text)
+    return re.sub(r"\n\s*\n+", "\n\n", text).strip()
+
+
+templates.env.filters["plaintext"] = _plaintext
 
 
 @asynccontextmanager
@@ -104,7 +117,7 @@ def dashboard(request: Request):
         counts = {}
         for o in all_orders:
             counts[o.status] = counts.get(o.status, 0) + 1
-        shipped = [o for o in all_orders if o.status in ("placed", "shipped")]
+        shipped = [o for o in all_orders if o.status in ("placed", "tracking_ready", "shipped")]
         stats = {
             "orders": len(all_orders),
             "revenue": sum(o.sale_total for o in shipped),
@@ -117,7 +130,9 @@ def dashboard(request: Request):
         risky = [o for o in all_orders if orders.at_risk(o, s)]
         events = list(db.exec(select(Event).order_by(Event.at.desc()).limit(25)))
         conn = {p: get_token(db, p) for p in ("tiktok", "aliexpress")}
-    return render(request, "dashboard.html", stats=stats, counts=counts, action=action,
+        tracking = tiktok_files.tracking_orders(db) if s.tiktok_mode != "api" else []
+        updates = tiktok_files.pending_updates(db) if s.tiktok_mode != "api" else []
+    return render(request, "dashboard.html", tracking=tracking, updates=updates, stats=stats, counts=counts, action=action,
                   risky=risky, events=events, conn=conn, at_risk=lambda o: orders.at_risk(o, s))
 
 
@@ -160,7 +175,9 @@ def order_page(request: Request, oid: int):
         if not o:
             return back(request, "/orders", "Order not found.", "error")
         events = list(db.exec(select(Event).where(Event.order_id == oid).order_by(Event.at.desc())))
-    return render(request, "order.html", o=o, events=events,
+        choices = [(v.id, f"{p.title[:50]} — {v.name} ({v.seller_sku or 'no SKU yet'})")
+                   for p in db.exec(select(Product)) for v in products.variants_of(db, p.id)]
+    return render(request, "order.html", o=o, events=events, choices=choices,
                   at_risk=orders.at_risk(o, current_settings()))
 
 
@@ -232,7 +249,8 @@ def import_product(request: Request, url: str = Form(...), multiplier: str = For
             p = products.import_product(db, s, url, float(multiplier) if multiplier else None)
         except Exception as e:
             return back(request, "/products", f"Import failed: {e}", "error")
-        return back(request, f"/products/{p.id}", "Imported as a draft. Check prices, then publish.")
+        nxt = "publish" if s.tiktok_mode == "api" else "follow 'List it on TikTok' below"
+        return back(request, f"/products/{p.id}", f"Imported as a draft. Check prices, then {nxt}.")
 
 
 @app.get("/products/{pid}", response_class=HTMLResponse)
@@ -242,7 +260,7 @@ def product_page(request: Request, pid: int):
         p = db.get(Product, pid)
         if not p:
             return back(request, "/products", "Product not found.", "error")
-        vs = products.variants_of(db, pid)
+        vs = products.ensure_seller_skus(db, p) if s.tiktok_mode != "api" else products.variants_of(db, pid)
         events = list(db.exec(select(Event).where(Event.product_id == pid)
                               .order_by(Event.at.desc()).limit(30)))
     from .services.pricing import profit
@@ -255,9 +273,10 @@ async def edit_product(request: Request, pid: int):
     form = await request.form()
     with session() as db:
         p = db.get(Product, pid)
-        if p.tiktok_product_id:
+        if p.tiktok_product_id or p.status in ("listed", "paused"):
             return back(request, f"/products/{pid}",
-                        "Already on TikTok — change markup in .env or edit on TikTok.", "error")
+                        "Already on TikTok. Change the markup on the Settings page, or edit it on TikTok.",
+                        "error")
         p.title = str(form.get("title", p.title))[:255]
         p.description = str(form.get("description", p.description))
         for v in products.variants_of(db, pid):
@@ -275,6 +294,9 @@ async def edit_product(request: Request, pid: int):
 @app.post("/products/{pid}/publish")
 def publish(request: Request, pid: int):
     s = current_settings()
+    if s.tiktok_mode != "api":
+        return back(request, f"/products/{pid}", "In files mode, list it in Seller Center using the "
+                    "steps below, then click 'I've listed it'.", "error")
     with session() as db:
         p = db.get(Product, pid)
         try:
@@ -299,9 +321,10 @@ def sync(request: Request, pid: int):
 def delete(request: Request, pid: int):
     with session() as db:
         p = db.get(Product, pid)
-        if p.tiktok_product_id:
+        if p.tiktok_product_id or p.status in ("listed", "paused"):
             return back(request, f"/products/{pid}",
-                        "It's live on TikTok — deactivate it in Seller Center first.", "error")
+                        "It's live on TikTok — remove it in Seller Center, then 'Move back to draft' first.",
+                        "error")
         for v in products.variants_of(db, pid):
             db.delete(v)
         db.delete(p)
@@ -394,3 +417,147 @@ def oauth_callback(request: Request, platform: str, code: str = "", state: str =
         except Exception as e:
             return back(request, "/settings", f"Connecting {platform} failed: {e}", "error")
     return back(request, "/settings", f"{platform.title()} connected.")
+
+
+# ------------------------------------------------------------ Files mode --
+def download(data: bytes, filename: str) -> Response:
+    media = ("text/csv" if filename.endswith(".csv") else
+             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return Response(data, media_type=media,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+async def optional_template(upload: UploadFile | None):
+    if upload is None or not upload.filename:
+        return None
+    data = await upload.read()
+    return (data, upload.filename) if data else None
+
+
+@app.post("/files/orders")
+async def upload_orders(request: Request, file: UploadFile = File(...)):
+    data = await file.read()
+    if not data:
+        return back(request, "/", "Choose the orders file you exported from Seller Center first.", "error")
+    with session() as db:
+        try:
+            r = tiktok_files.import_orders(db, current_settings(), data, file.filename or "orders.xlsx")
+        except SheetError as e:
+            return back(request, "/", f"Couldn't read that file: {e}", "error")
+    parts = [f"{r['new']} new order(s) to approve"]
+    if r["held"]:
+        parts.append(f"{r['held']} held for review")
+    if r["cancelled"]:
+        parts.append(f"{r['cancelled']} cancelled")
+    if r["already"]:
+        parts.append(f"{r['already']} already imported")
+    if r["skipped"]:
+        parts.append(f"{r['skipped']} skipped (not awaiting shipment)")
+    return back(request, "/", "Orders file imported: " + ", ".join(parts) + ".")
+
+
+@app.get("/files/sample-orders")
+def sample_orders(request: Request):
+    if not current_settings().mock_mode:
+        return back(request, "/", "Only available in MOCK_MODE.", "error")
+    with session() as db:
+        data = tiktok_files.sample_export(db)
+    if data.count(b"\n") < 2:
+        return back(request, "/", "Mark a product as listed first (Products → I've listed it).", "error")
+    return download(data, "sample-tiktok-orders.csv")
+
+
+@app.post("/files/tracking")
+async def tracking_download(request: Request, template: UploadFile | None = File(None)):
+    tpl = await optional_template(template)
+    with session() as db:
+        if not tiktok_files.tracking_orders(db):
+            return back(request, "/", "No tracking numbers waiting to be uploaded.", "error")
+        try:
+            data, name = tiktok_files.tracking_file(db, tpl)
+        except SheetError as e:
+            return back(request, "/", f"Couldn't fill that template: {e}", "error")
+    return download(data, name)
+
+
+@app.post("/files/tracking/done")
+async def tracking_done(request: Request):
+    form = await request.form()
+    ids = [int(x) for x in form.getlist("order_id") if str(x).isdigit()]
+    with session() as db:
+        n = tiktok_files.mark_tracking_uploaded(db, ids)
+    return back(request, "/", f"{n} order(s) marked as shipped.")
+
+
+@app.post("/files/prices")
+async def prices_download(request: Request, template: UploadFile | None = File(None)):
+    tpl = await optional_template(template)
+    with session() as db:
+        if not tiktok_files.pending_updates(db):
+            return back(request, "/", "No price or stock changes to upload.", "error")
+        try:
+            data, name = tiktok_files.price_stock_file(db, tpl)
+        except SheetError as e:
+            return back(request, "/", f"Couldn't fill that template: {e}", "error")
+    return download(data, name)
+
+
+@app.post("/files/prices/done")
+def prices_done(request: Request):
+    with session() as db:
+        n = tiktok_files.mark_updates_done(db)
+    return back(request, "/", f"{n} price/stock update(s) marked as done.")
+
+
+@app.get("/products/{pid}/images.zip")
+def product_images(request: Request, pid: int):
+    with session() as db:
+        p = db.get(Product, pid)
+        if not p:
+            return back(request, "/products", "Product not found.", "error")
+        data = tiktok_files.images_zip(p)
+    return Response(data, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="product-{pid}-photos.zip"'})
+
+
+@app.post("/products/{pid}/listed")
+def product_listed(request: Request, pid: int, tiktok_product_id: str = Form("")):
+    with session() as db:
+        p = db.get(Product, pid)
+        products.mark_listed(db, p, tiktok_product_id)
+    return back(request, f"/products/{pid}", "Marked as listed. TTDS will now watch its price and stock.")
+
+
+@app.post("/products/{pid}/unlist")
+def product_unlist(request: Request, pid: int):
+    with session() as db:
+        p = db.get(Product, pid)
+        p.status = "draft"
+        if current_settings().tiktok_mode != "api":
+            p.tiktok_product_id = None
+        db.add(p)
+        db.commit()
+    return back(request, f"/products/{pid}", "Moved back to draft.")
+
+
+@app.post("/orders/{oid}/link")
+def order_link(request: Request, oid: int, index: int = Form(...), variant_id: int = Form(...)):
+    with session() as db:
+        try:
+            orders.link_item(db, current_settings(), db.get(Order, oid), index, variant_id)
+        except ValueError as e:
+            return back(request, f"/orders/{oid}", str(e), "error")
+    return back(request, f"/orders/{oid}", "Item linked.")
+
+
+@app.post("/orders/{oid}/address")
+async def order_address(request: Request, oid: int):
+    form = await request.form()
+    fields = {k: str(form.get(k, "")) for k in
+              ("full_name", "phone", "address", "address2", "city", "province", "zip", "country")}
+    with session() as db:
+        try:
+            orders.update_address(db, current_settings(), db.get(Order, oid), fields)
+        except ValueError as e:
+            return back(request, f"/orders/{oid}", str(e), "error")
+    return back(request, f"/orders/{oid}", "Address saved.")

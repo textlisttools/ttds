@@ -5,7 +5,7 @@
 <div class="row-head">
   <h1>Orders</h1>
   <div class="actions">
-    {% for st in ['', 'needs_approval', 'held', 'error', 'placed', 'shipped', 'cancelled'] %}
+    {% for st in ['', 'needs_approval', 'held', 'error', 'placed', 'tracking_ready', 'shipped', 'cancelled'] %}
     <a class="chip {{ 'on' if st == status }}" href="/orders{{ '?status=' ~ st if st }}">{{ st.replace('_',' ') or 'all' }}</a>
     {% endfor %}
   </div>

@@ -63,6 +63,30 @@ def variants_of(db: Session, product_id: int) -> list[Variant]:
     return list(db.exec(select(Variant).where(Variant.product_id == product_id)))
 
 
+def ensure_seller_skus(db: Session, product: Product) -> list[Variant]:
+    """Every variant gets a Seller SKU. You type it into TikTok so orders can be matched."""
+    vs = variants_of(db, product.id)
+    for v in vs:
+        if not v.seller_sku:
+            v.seller_sku = f"TTDS-{product.id}-{v.id}"
+            db.add(v)
+    db.commit()
+    return vs
+
+
+def mark_listed(db: Session, product: Product, tiktok_product_id: str = "") -> Product:
+    """Files mode: you created the listing in Seller Center yourself."""
+    for v in ensure_seller_skus(db, product):
+        v.tt_price, v.tt_stock = v.price, v.listed_stock
+        db.add(v)
+    product.tiktok_product_id = tiktok_product_id.strip() or product.tiktok_product_id
+    product.status, product.error = "listed", ""
+    db.add(product)
+    log(db, f"Marked '{product.title[:60]}' as listed on TikTok", product_id=product.id)
+    db.commit()
+    return product
+
+
 def publish_product(db: Session, s: Settings, product: Product) -> Product:
     """Create the listing on TikTok Shop. TikTok reviews new listings before they go live."""
     tt, tok = connections.tiktok(db, s)
@@ -101,7 +125,7 @@ def sync_product(db: Session, s: Settings, product: Product, ae=None, tt=None, w
     """Re-check AliExpress price/stock and push changes to TikTok. Returns number of changes."""
     if ae is None:
         ae = connections.aliexpress(db, s)
-    if tt is None and product.tiktok_product_id:
+    if tt is None and product.tiktok_product_id and s.tiktok_mode == "api":
         tt, tok = connections.tiktok(db, s)
         warehouse = tok.extra.get("warehouse_id", "")
     changes = 0
@@ -120,7 +144,14 @@ def sync_product(db: Session, s: Settings, product: Product, ae=None, tt=None, w
         if src:
             v.ae_stock, v.cost = src["stock"], src["price"]
         new_price = selling_price(v.cost, v.shipping_cost, s, product.markup_multiplier)
-        if tt and product.tiktok_product_id and v.tiktok_sku_id:
+        if s.tiktok_mode != "api" and product.status in ("listed", "paused"):
+            # Files mode: just record the change; it goes in the price/stock file for you to upload.
+            if new_stock != v.listed_stock or abs(new_price - v.price) >= 0.01:
+                log(db, f"{product.title[:40]} / {v.name}: TikTok needs updating — price "
+                        f"${v.price:.2f} → ${new_price:.2f}, stock {v.listed_stock} → {new_stock}",
+                    "warning" if new_stock == 0 else "info", product_id=product.id)
+                changes += 1
+        elif tt and product.tiktok_product_id and v.tiktok_sku_id:
             if new_stock != v.listed_stock:
                 tt.update_inventory(product.tiktok_product_id, v.tiktok_sku_id, new_stock, warehouse)
                 log(db, f"{product.title[:40]} / {v.name}: stock {v.listed_stock} → {new_stock}",
@@ -147,11 +178,14 @@ def sync_all_products(db: Session, s: Settings) -> int:
     if not products:
         return 0
     ae = connections.aliexpress(db, s)
-    tt, tok = connections.tiktok(db, s)
+    tt, warehouse = None, ""
+    if s.tiktok_mode == "api":
+        tt, tok = connections.tiktok(db, s)
+        warehouse = tok.extra.get("warehouse_id", "")
     total = 0
     for p in products:
         try:
-            total += sync_product(db, s, p, ae, tt, tok.extra.get("warehouse_id", ""))
+            total += sync_product(db, s, p, ae, tt, warehouse)
         except Exception as e:
             db.rollback()
             log(db, f"Sync failed for '{p.title[:60]}': {e}", "error", product_id=p.id)

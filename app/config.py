@@ -22,7 +22,12 @@ class Settings(BaseSettings):
     dashboard_password: str = "change-me"
     session_secret: str = "change-this-to-a-long-random-string"
 
-    # --- TikTok Shop (Partner Center -> your app) -----------------------------
+    # --- TikTok Shop --------------------------------------------------------------
+    # "files": you upload/download spreadsheets in Seller Center (no API keys needed).
+    # "api":   direct connection through a TikTok Shop Partner Center app.
+    tiktok_mode: str = "files"
+    # Files mode: days after payment that TikTok expects shipment, if the export has no deadline column.
+    handling_days: int = 3
     tiktok_app_key: str = ""
     tiktok_app_secret: str = ""
     # The "service id" shown on your app page; used to build the authorize link.

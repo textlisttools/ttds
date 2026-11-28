@@ -8,3 +8,4 @@ python-multipart==0.0.19
 apscheduler==3.11.0
 itsdangerous==2.2.0
 pytest==8.3.4
+openpyxl==3.1.5

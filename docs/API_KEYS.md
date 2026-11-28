@@ -28,7 +28,9 @@ TikTok and AliExpress send you back to the app after you click **Connect**, so i
 
 ---
 
-## Step 2: TikTok Shop API keys
+## Step 2: TikTok Shop API keys (API mode only, skip for files mode)
+
+TTDS works in **files mode** by default, which needs no TikTok keys. Do this step only if you later want fully automatic TikTok syncing. TikTok may only open developer registration to established shops.
 
 You need an active **TikTok Shop seller account** first (https://seller-us.tiktok.com for the US).
 

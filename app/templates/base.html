@@ -18,7 +18,7 @@
     <a href="/logout" class="muted">Log out</a>
   </nav>
 </header>
-{% if s.mock_mode %}<div class="banner">MOCK MODE — fake data, nothing is listed or bought. Set <code>MOCK_MODE=false</code> in .env once your API keys are in.</div>{% endif %}
+{% if s.mock_mode %}<div class="banner">MOCK MODE: fake data, nothing is bought. Set <code>MOCK_MODE=false</code> once your AliExpress keys are in.</div>{% endif %}
 {% endif %}
 <main>
 {% if flash %}<div class="flash {{ flash.level }}">{{ flash.msg }}</div>{% endif %}
